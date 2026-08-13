@@ -536,52 +536,6 @@ async function startRound() {
   }
 }
 
-    lastCompletedPeriod = latest.period;
-
-    localStorage.setItem(
-      "nexus-wingo-last-completed",
-      lastCompletedPeriod,
-    );
-
-    state.results = history
-      .map((item: { result: number }) => item.result)
-      .filter(
-        (value: number) =>
-          value >= 0 && value <= 9,
-      )
-      .reverse();
-
-    // IMPORTANT:
-    // API latest = completed
-    // UI period = next/live
-    state.period = nextPeriod(latest.period);
-
-    $("periodNum").textContent = state.period;
-
-    const { prediction, volatility } =
-      buildPrediction(
-        state.results,
-        state.level,
-        state.period,
-      );
-
-    state.volatility = volatility;
-    state.currentPrediction = prediction;
-
-    renderForecast(prediction);
-
-    timeLeft =
-      ROUND_SECONDS -
-      (Math.floor(Date.now() / 1000) % ROUND_SECONDS);
-
-    tickTimer();
-  } catch (error) {
-    console.error(
-      "WinGo API sync failed:",
-      error,
-    );
-  }
-}
 
 
 
