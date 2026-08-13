@@ -540,7 +540,7 @@ async function startRound() {
 
 
   // API polling decides WIN/LOSS resolution.
-}
+
 
     function telemetry() {
       const ping = 18 + Math.floor(Math.random() * 22);
