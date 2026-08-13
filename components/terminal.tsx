@@ -399,31 +399,171 @@ async function fetchGameHistory() {
       $("timerNum").textContent = String(timeLeft).padStart(2, "0");
     }
 
-    async function startRound() {
+    function nextPeriod(period: string): string {
+  const m = period.match(/^(.*?)(\d+)$/);
+  if (!m) return period;
+
+  return (
+    m[1] +
+    String(Number(m[2]) + 1).padStart(m[2].length, "0")
+  );
+}
+
+let lastCompletedPeriod =
+  localStorage.getItem("nexus-wingo-last-completed") || "";
+
+function persistHistory() {
+  try {
+    localStorage.setItem(
+      "nexus-wingo-history",
+      JSON.stringify({
+        rows: state.rows,
+        stats: state.stats,
+        level: state.level,
+        balance: state.balance,
+        lastCompletedPeriod,
+      }),
+    );
+  } catch {}
+}
+
+function restoreHistory() {
+  try {
+    const raw = localStorage.getItem("nexus-wingo-history");
+    if (!raw) return;
+
+    const saved = JSON.parse(raw);
+
+    if (Array.isArray(saved.rows)) {
+      state.rows = saved.rows.slice(0, HISTORY_MAX);
+    }
+
+    if (saved.stats) {
+      state.stats = {
+        ...state.stats,
+        ...saved.stats,
+      };
+    }
+
+    if (Number.isInteger(saved.level)) {
+      state.level = Math.max(
+        0,
+        Math.min(PLAN.length - 1, saved.level),
+      );
+    }
+
+    if (Number.isFinite(saved.balance)) {
+      state.balance = saved.balance;
+    }
+
+    if (typeof saved.lastCompletedPeriod === "string") {
+      lastCompletedPeriod = saved.lastCompletedPeriod;
+    }
+  } catch {}
+}
+
+async function startRound() {
   try {
     const history = await fetchGameHistory();
 
-    if (!history.length) {
-      console.warn("WinGo API returned no history");
-      return;
-    }
+    if (!history.length) return;
 
     const latest = history[0];
 
-    state.period = latest.period;
+    const completedPeriod = String(latest.period);
+    const actualNumber = Number(latest.result);
+
+    if (!completedPeriod || !Number.isFinite(actualNumber)) {
+      return;
+    }
+
+    const nextPeriod =
+      (BigInt(completedPeriod) + 1n).toString();
+
+    // Previous prediction result resolve
+    if (
+      state.currentPrediction &&
+      state.currentPrediction.period === completedPeriod
+    ) {
+      resolveRound(
+        state.currentPrediction,
+        actualNumber
+      );
+    }
+
+    // Create prediction for NEXT period
+    if (
+      !state.currentPrediction ||
+      state.currentPrediction.period !== nextPeriod
+    ) {
+      state.results = history
+        .map((item: { result: number }) => item.result)
+        .filter(
+          (value: number) =>
+            value >= 0 && value <= 9
+        )
+        .reverse();
+
+      const { prediction, volatility } =
+        buildPrediction(
+          state.results,
+          state.level,
+          nextPeriod
+        );
+
+      state.period = nextPeriod;
+      state.volatility = volatility;
+      state.currentPrediction = prediction;
+
+      $("periodNum").textContent = nextPeriod;
+
+      renderForecast(prediction);
+    }
+
+    // Real-time 60 second countdown
+    timeLeft =
+      ROUND_SECONDS -
+      (Math.floor(Date.now() / 1000) %
+        ROUND_SECONDS);
+
+    tickTimer();
+
+  } catch (error) {
+    console.error(
+      "WinGo API sync failed:",
+      error
+    );
+  }
+}
+
+    lastCompletedPeriod = latest.period;
+
+    localStorage.setItem(
+      "nexus-wingo-last-completed",
+      lastCompletedPeriod,
+    );
 
     state.results = history
       .map((item: { result: number }) => item.result)
-      .filter((value: number) => value >= 0 && value <= 9)
+      .filter(
+        (value: number) =>
+          value >= 0 && value <= 9,
+      )
       .reverse();
+
+    // IMPORTANT:
+    // API latest = completed
+    // UI period = next/live
+    state.period = nextPeriod(latest.period);
 
     $("periodNum").textContent = state.period;
 
-    const { prediction, volatility } = buildPrediction(
-      state.results,
-      state.level,
-      state.period
-    );
+    const { prediction, volatility } =
+      buildPrediction(
+        state.results,
+        state.level,
+        state.period,
+      );
 
     state.volatility = volatility;
     state.currentPrediction = prediction;
@@ -435,34 +575,17 @@ async function fetchGameHistory() {
       (Math.floor(Date.now() / 1000) % ROUND_SECONDS);
 
     tickTimer();
-
   } catch (error) {
-    console.error("WinGo API sync failed:", error);
+    console.error(
+      "WinGo API sync failed:",
+      error,
+    );
   }
 }
 
-    function endRound() {
-      const pred = state.currentPrediction;
-      if (!pred) return;
-      
-      resolveRound(pred, actual);
-    }
 
-  function loop() {
-  if (!state.auto) return;
 
-  const newTimeLeft =
-    ROUND_SECONDS -
-    (Math.floor(Date.now() / 1000) % ROUND_SECONDS);
-
-  if (newTimeLeft !== timeLeft) {
-    timeLeft = newTimeLeft;
-    tickTimer();
-  }
-
-  if (timeLeft === ROUND_SECONDS) {
-    startRound();
-  }
+  // API polling decides WIN/LOSS resolution.
 }
 
     function telemetry() {
@@ -514,6 +637,17 @@ async function fetchGameHistory() {
         $("roundState").textContent = "PAUSED";
       }
     };
+function loop() {
+  if (!state.auto) return;
+
+  timeLeft =
+    ROUND_SECONDS -
+    (Math.floor(Date.now() / 1000) % ROUND_SECONDS);
+
+  tickTimer();
+
+  startRound();
+}
     autoBtn.addEventListener("click", onAuto);
 
     seedHistory();
