@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect  } from "react";
 import {
   sizeOf,
   colorOf,
@@ -29,7 +29,43 @@ interface Row {
 }
 
 export default function Terminal() {
-  useEffect(() => {
+  useEffect(() => { const API_URL =
+  "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
+
+async function fetchGameHistory() {
+  const res = await fetch(`${API_URL}?ts=${Date.now()}`, {
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+
+  const list =
+    json?.data?.list ??
+    json?.data?.result?.list ??
+    json?.result?.list ??
+    [];
+
+  return list.map((item: any) => ({
+    period: String(
+      item.issueNumber ??
+      item.issue ??
+      item.period ??
+      item.issueNo ??
+      ""
+    ),
+    result: Number(
+      item.number ??
+      item.result ??
+      item.openNumber ??
+      item.openNum ??
+      0
+    ),
+  })).filter((x: any) => x.period && Number.isFinite(x.result));
+}
     const $ = (id: string) => document.getElementById(id)!;
 
     const state = {
@@ -44,20 +80,7 @@ export default function Terminal() {
       volatility: 0.3,
     };
 
-    function makePeriod() {
-      const now = new Date();
-      const y = now.getUTCFullYear();
-      const m = String(now.getUTCMonth() + 1).padStart(2, "0");
-      const d = String(now.getUTCDate()).padStart(2, "0");
-      const seq = String(
-        10000 +
-          Math.floor(
-            (now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds()) /
-              ROUND_SECONDS,
-          ),
-      ).slice(-5);
-      return `${y}${m}${d}${seq}`;
-    }
+   
 
     function renderForecast(pred: Prediction) {
       $("engineTag").textContent = "ENGINE: " + pred.engine;
@@ -376,16 +399,47 @@ export default function Terminal() {
       $("timerNum").textContent = String(timeLeft).padStart(2, "0");
     }
 
-    function startRound() {
-      state.period = makePeriod() + "-" + Math.floor(Math.random() * 900 + 100);
-      $("periodNum").textContent = state.period;
-      const { prediction, volatility } = buildPrediction(state.results, state.level, state.period);
-      state.volatility = volatility;
-      state.currentPrediction = prediction;
-      renderForecast(prediction);
-      timeLeft = ROUND_SECONDS;
-      tickTimer();
+    async function startRound() {
+  try {
+    const history = await fetchGameHistory();
+
+    if (!history.length) {
+      console.warn("WinGo API returned no history");
+      return;
     }
+
+    const latest = history[0];
+
+    state.period = latest.period;
+
+    state.results = history
+      .map((item: { result: number }) => item.result)
+      .filter((value: number) => value >= 0 && value <= 9)
+      .reverse();
+
+    $("periodNum").textContent = state.period;
+
+    const { prediction, volatility } = buildPrediction(
+      state.results,
+      state.level,
+      state.period
+    );
+
+    state.volatility = volatility;
+    state.currentPrediction = prediction;
+
+    renderForecast(prediction);
+
+    timeLeft =
+      ROUND_SECONDS -
+      (Math.floor(Date.now() / 1000) % ROUND_SECONDS);
+
+    tickTimer();
+
+  } catch (error) {
+    console.error("WinGo API sync failed:", error);
+  }
+}
 
     function endRound() {
       const pred = state.currentPrediction;
@@ -394,16 +448,22 @@ export default function Terminal() {
       resolveRound(pred, actual);
     }
 
-    function loop() {
-      if (!state.auto) return;
-      timeLeft--;
-      if (timeLeft < 0) {
-        endRound();
-        startRound();
-      } else {
-        tickTimer();
-      }
-    }
+  function loop() {
+  if (!state.auto) return;
+
+  const newTimeLeft =
+    ROUND_SECONDS -
+    (Math.floor(Date.now() / 1000) % ROUND_SECONDS);
+
+  if (newTimeLeft !== timeLeft) {
+    timeLeft = newTimeLeft;
+    tickTimer();
+  }
+
+  if (timeLeft === ROUND_SECONDS) {
+    startRound();
+  }
+}
 
     function telemetry() {
       const ping = 18 + Math.floor(Math.random() * 22);
