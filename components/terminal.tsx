@@ -11,7 +11,7 @@ import {
   PAYOUT,
   PLAN,
   buildPrediction,
-  drawResult,
+ 
   type Prediction,
   type Status,
 } from "@/lib/engine";
@@ -444,7 +444,7 @@ async function fetchGameHistory() {
     function endRound() {
       const pred = state.currentPrediction;
       if (!pred) return;
-      const actual = drawResult(state.results);
+      
       resolveRound(pred, actual);
     }
 
