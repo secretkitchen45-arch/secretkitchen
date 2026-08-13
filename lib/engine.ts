@@ -19,7 +19,7 @@ export function isViolet(d: number): boolean {
   return d === 0 || d === 5;
 }
 
-export const ROUND_SECONDS = 30;
+export const ROUND_SECONDS = 60;
 export const HISTORY_MAX = 60;
 export const DEPTH_MAX = 1000;
 export const PAYOUT = 2;
